@@ -79,8 +79,8 @@ class Timer():
     def __init__(self):
         self.o = time.time()
 
-    def measure(self):
-        x = int(time.time() - self.o)
+    def measure(self, p=1.0):
+        x = int((time.time() - self.o)/p)
         if x >= 3600.:
             return f'{x // 3600}h{(x % 3600) // 60}m{(x % 60)}s'
         elif x >= 60:
@@ -109,14 +109,14 @@ def postprocess_args(args):
                            args.model_class,
                            args.meta_model_class,
                            args.backbone_class,
-                           '{:02d}w{:02d}:{:02d}q'.format(args.way, args.shot, args.query)])
+                           '{:02d}w{:02d}s{:02d}q'.format(args.way, args.shot, args.query)])
     save_path2 = '_'.join([
-        str('_'.join(args.step_size.split(','))),
+        str(args.step_size),
         str(args.gamma),
-        'lr{:.2g}mul{:.2g}'.format(args.lr, args.lr_mul),
+        'lr{:.2g}'.format(args.init_lr),
         str(args.lr_scheduler),
-        f'T1{args.temperature}T2{args.temperature2}',
-        f'b{args.balance}',
+        f'T1{args.tau1}',
+        f'b{args.beta}',
         'ba_sz{:03d}'.format(max(args.way, args.num_classes)*(args.shot+args.query))
     ])
     if args.init_weights is not None:
@@ -146,9 +146,9 @@ def get_command_line_parser():
     parser.add_argument('--log_interval', type=int, default=50)
     parser.add_argument('--episodes_per_epoch', type=int, default=100)
     parser.add_argument('--num_eval_episodes', type=int, default=600)
-    parser.add_argument('--num_eval_episodes', type=int, default=600)
+    parser.add_argument('--eval_interval', type=int, default=5)
 
-    parser.add_argument('--model_class', type=str, default='premod')
+    parser.add_argument('--model_class', type=str, default='PreMod')
     parser.add_argument('--meta_model_class', type=str, default='metamod')
     parser.add_argument('--backbone_class', type=str, default='Res12')
     parser.add_argument('--init_weights', type=str, default=None)
@@ -178,12 +178,19 @@ def get_command_line_parser():
     parser.add_argument('--init_lr', type=float,  default=0.1)
     parser.add_argument('--lr_scheduler', type=str, default='cosine', choices=['cosine','step'])
 
+    parser.add_argument('--gpu', default='0')
+
     # StepLR
-    parser.add_argument('--pre_step_size', type=int, default=40)
-    parser.add_argument('--pre_gamma', typed=float, default=0.5)
-    parser.add_argument('--pre_beta', type=float, default=0.01)
-    parser.add_argument('--meta_step_size', type=int, default=50)
-    parser.add_argument('--meta_gamma', typed=float, default=0.5)
-    parser.add_argument('--meta_beta', type=float, default=0.1)
+    # parser.add_argument('--pre_step_size', type=int, default=40)
+    # parser.add_argument('--meta_step_size', type=int, default=50)
+    # parser.add_argument('--pre_gamma', type=float, default=0.5)
+    # parser.add_argument('--meta_gamma', type=float, default=0.5)
+    # parser.add_argument('--pre_beta', type=float, default=0.01)
+    # parser.add_argument('--meta_beta', type=float, default=0.1)
+    parser.add_argument('--step_size', type=int, default=40)
+    parser.add_argument('--gamma', type=float, default=0.5)
+    parser.add_argument('--beta', type=float, default=0.01)
 
-
+    parser.add_argument('--fix_BN', action='store_true', default=False)
+    parser.add_argument('--save_dir', type=str, default='D:\\_doors_programs\\fsl-save')
+    return parser

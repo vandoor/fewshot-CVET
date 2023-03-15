@@ -75,6 +75,7 @@ class Cifar_100(Dataset):
 
     def __getitem__(self, i):
         data, label = self.data[i], self.labels[i]
-        img = self.transform(data)
-        return img, label
+        img1 = self.transform(data)
+        img2 = self.transform(data)
+        return img1, img2, label
 

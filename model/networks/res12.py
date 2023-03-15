@@ -104,9 +104,10 @@ class ResNet(nn.Module):
         x = self.layer4(x)
         if self.keep_avg_pool:
             x = self.avgpool(x)
+
         print(f'after res12: {x} shape is {x.shape}')
-        x = x.view(x.size(0), -1)
-        print(f'after viewing: {x} shape is {x.shape}')
+        # x = x.view(x.size(0), -1)
+        # print(f'after viewing: {x} shape is {x.shape}')
         return x
         # TODO
 

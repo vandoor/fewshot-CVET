@@ -4,7 +4,7 @@ import numpy as np
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from model.dataloader.Sampler import CategoriesSampler
-from model.models.premod import fs_class_model
+from model.models.premod import PreMod
 
 
 def get_dataloader(args):
@@ -79,6 +79,7 @@ def prepare_optimizer(model, args):
          {'params': top_para, 'lr': args.init_lr}],
         weight_decay=args.weight_decay,
         momentum=args.momentum,
+        lr=args.init_lr
     )
     if args.lr_scheduler == 'cosine':
         lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
