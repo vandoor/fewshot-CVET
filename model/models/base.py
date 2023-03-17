@@ -1,14 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from model.networks.proj import proj
+from model.networks.proj import Proj
 
 class FewShotModel(nn.Module):
-    def __init__(self,args):
-        super().__init__()
+    def __init__(self, args):
+        super(FewShotModel, self).__init__()
         self.args = args
-        self.gap = nn.AdaptiveAvgPool2d((1,1))
-        self.fc = proj(640, args.D, args)
+        self.gap = nn.AdaptiveAvgPool2d((1, 1))
         if args.backbone_class == 'Res12':
             hdim = 640
             from model.networks.res12 import ResNet
@@ -33,30 +32,28 @@ class FewShotModel(nn.Module):
                 .view(1, args.eval_query,args.eval_way)
             )
 
-    def forward(self, x, get_feature=False, require_qkv=False):
+    def forward(self, x, get_feature=False, require_losses=False):
         if get_feature:
             return self.encoder(x)
         else:
             x = x.squeeze(0)
             x = self.encoder(x)
-            print('base forward: conv result:', x.shape)
             num_inst = x.shape[0]
-            instance_emb = self.gap(x).view(num_inst, -1)
-            ans = {'z': self.fc(instance_emb)}
-            # split support query set for few shot data
-            support_idx, query_idx = self.split_instance()
-
-            if self.training:
-                ans['logits'] = self._forward(instance_emb, support_idx, query_idx)
-            else:
-                ans['logits'] = self._forward(instance_emb, support_idx, query_idx)
-
-            if require_qkv:
+            embed = self.gap(x).view(num_inst, -1)
+            ans = {'logits': self._forward(embed)}
+            if require_losses:
                 ans['q'], ans['k'], ans['v'] = self.get_qkv(x)
+                ans['z'] = self.get_z(embed)
             return ans
 
-    def _forward(self, x, support_idx, query_idx):
+    # def _forward(self, x, support_idx, query_idx):
+    #     raise NotImplementedError('Suppose to be implemented by subclass')
+
+    def _forward(self, x):
         raise NotImplementedError('Suppose to be implemented by subclass')
 
     def get_qkv(self, x):
+        raise NotImplementedError('Suppose to be implemented by subclass')
+
+    def get_z(self, x):
         raise NotImplementedError('Suppose to be implemented by subclass')

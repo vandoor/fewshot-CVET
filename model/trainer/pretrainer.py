@@ -13,7 +13,7 @@ class PreTrainer(Trainer):
     def __init__(self, args):
         super().__init__(args)
         self.train_loader, self.val_loader, self.test_loader = get_dataloader(args)
-        self.model, self.para_model = prepare_model(args)
+        self.model = prepare_model(args)
         self.optimizer, self.lr_scheduler = prepare_optimizer(self.model, args)
 
     def prepare_label(self):
@@ -27,8 +27,7 @@ class PreTrainer(Trainer):
     def train(self):
         # TODO
         args = self.args
-
-        label = self.prepare_label()
+        eye = torch.eye(args.num_classes).cuda()
         for epoch in range(1, args.max_epoch+1):
             self.train_epoch += 1
             self.model.train()
@@ -39,7 +38,6 @@ class PreTrainer(Trainer):
             z_list, inner_z_prod = [], []
             q_list, k_list, v_list = [], [], []
             for batch in self.train_loader:
-                print(f'batch = {batch.shape}')
                 self.train_step += 1
                 if torch.cuda.is_available():
                     data1, data2, gt_label = [_.cuda() for _ in batch]
@@ -47,18 +45,19 @@ class PreTrainer(Trainer):
                     data1, data2, gt_label = batch[0], batch[1], batch[2]
                 data_tm = time.time()
                 self.dt.add(data_tm-start_tm)
-                results1 = self.para_model(data1, get_feature=False, require_qkv=True)
-                results2 = self.para_model(data2, get_feature=False, require_qkv=True)
+                results1 = self.model(data1, get_feature=False, require_losses=True)
+                results2 = self.model(data2, get_feature=False, require_losses=True)
                 logits, q, k, v, z = results1['logits'], results1['q'], results1['k'], results1['v'], results1['z']
                 logits_, q_, k_, v_, z_ = results2['logits'], results2['q'], results2['k'], results2['v'], results2['z']
-                print('here! logits.shape', logits.shape)
-                loss_CE = F.cross_entropy(logits, label)
+
+                labels = eye[gt_label].view(len(batch[2]), -1)
+                loss_CE = F.cross_entropy(logits, labels)
                 tl2.add(loss_CE)
 
                 total_loss = loss_CE
                 forward_tm = time.time()
                 self.ft.add(forward_tm-data_tm)
-                acc = count_acc(total_loss, label)
+                acc = count_acc(logits, gt_label)
                 tl1.add(total_loss.item())
                 ta.add(acc)
 

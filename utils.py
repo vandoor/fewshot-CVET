@@ -60,6 +60,7 @@ class Averager():
 
 def count_acc(logits, label):
     prediction = torch.argmax(logits, dim=1)
+
     if torch.cuda.is_available():
         return (prediction == label).type(torch.cuda.FloatTensor).mean().item()
     else:
@@ -104,7 +105,7 @@ def compute_confidence_interval(data):
 
 
 def postprocess_args(args):
-    args.num_classes = args.way
+    # args.num_classes = args.way
     save_path1 = '-'.join([args.dataset,
                            args.model_class,
                            args.meta_model_class,
@@ -172,6 +173,8 @@ def get_command_line_parser():
     parser.add_argument('--query', type=int, default=15)
     parser.add_argument('--eval_query', type=int, default=15)
 
+    parser.add_argument('--batch_size', type=int, default=64)
+
     # optimizer
     parser.add_argument('--weight_decay', type=float, default=5e-4)
     parser.add_argument('--momentum', type=float, default=0.9)
@@ -190,6 +193,7 @@ def get_command_line_parser():
     parser.add_argument('--step_size', type=int, default=40)
     parser.add_argument('--gamma', type=float, default=0.5)
     parser.add_argument('--beta', type=float, default=0.01)
+    parser.add_argument('--num_classes', type=int, default=100)
 
     parser.add_argument('--fix_BN', action='store_true', default=False)
     parser.add_argument('--save_dir', type=str, default='D:\\_doors_programs\\fsl-save')

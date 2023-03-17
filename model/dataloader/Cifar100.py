@@ -42,7 +42,7 @@ class Cifar_100(Dataset):
             transforms_list = [
                 transforms.Resize(92),
                 transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
+                transforms.ToTensor()
             ]
 
         if args.backbone_class == 'Res12':
@@ -50,7 +50,7 @@ class Cifar_100(Dataset):
                 transforms_list +
                 [
                     transforms.Normalize(np.array([x/255.0 for x in [120.39586422,  115.59361427, 104.54012653]]),
-                                         np.array([x/255.0 for x in [70.68188272,   68.27635443,  72.54505529]]))
+                                         np.array([x/255.0 for x in [70.68188272,   68.27635443,  72.54505529]])),
 
                 ]
             )
@@ -68,14 +68,20 @@ class Cifar_100(Dataset):
             self.labels = raw_data['fine_labels']
 
             self.data = self.raw_data.reshape(len(self.raw_data), 3, 32, 32).astype('float')
-            self.data = self.data / 255.0
+            # self.data = self.data / 255.0
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, i):
-        data, label = self.data[i], self.labels[i]
-        img1 = self.transform(data)
-        img2 = self.transform(data)
+        dat, label = self.data[i], self.labels[i]
+        dat = dat.transpose(1, 2, 0)
+        dat = np.array(dat, dtype=np.uint8)
+        dat = Image.fromarray(dat)
+
+        img1 = self.transform(dat)
+        img2 = self.transform(dat)
+
         return img1, img2, label
+
 

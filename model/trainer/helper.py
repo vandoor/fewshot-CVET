@@ -19,6 +19,20 @@ def get_dataloader(args):
     num_workers = args.num_workers
     trainset = Dataset('train', args, augment=not args.no_augment)
     args.num_class = trainset.num_class
+    args.total_samples = trainset.__len__()
+    # train_sampler = DirectSampler(n_batch=args.episodes_per_epoch, total_idx=args.total_samples, n_per=args.batch_size)
+    train_loader = DataLoader(dataset=trainset, num_workers=0, batch_size=args.batch_size, pin_memory=False)
+
+    valset = Dataset('val', args)
+    # val_sampler = DirectSampler(n_batch=args.episodes_per_epoch, total_idx=args.total_samples, n_per=args.batch_size)
+    val_loader = DataLoader(dataset=valset, num_workers=0, batch_size=args.batch_size, pin_memory=False)
+
+    testset = Dataset('test', args)
+    # test_sampler = DirectSampler(n_batch=args.episodes_per_epoch, total_idx=args.total_samples, n_per=args.batch_size)
+    test_loader = DataLoader(dataset=testset, num_workers=0, batch_size=args.batch_size, pin_memory=False)
+    return train_loader, val_loader, test_loader
+
+    """
     train_sampler = CategoriesSampler(trainset.labels,
     # TODO: does the n_batch equal episodes_per_epoch?
                                       num_episodes,
@@ -31,6 +45,7 @@ def get_dataloader(args):
                               batch_sampler=train_sampler,
                               pin_memory=True)
     valset = Dataset('val',args)
+    
     val_sampler = CategoriesSampler(valset.labels,
                                     args.num_eval_episodes,
                                     args.eval_way,
@@ -50,7 +65,7 @@ def get_dataloader(args):
                              num_workers=args.num_workers,
                              pin_memory=True)
     return train_loader, val_loader, test_loader
-
+    """
 
 def prepare_model(args):
     model = eval(args.model_class)(args)
@@ -68,8 +83,7 @@ def prepare_model(args):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    para_model = model.to(device)
-    return model, para_model
+    return model
 
 
 def prepare_optimizer(model, args):
