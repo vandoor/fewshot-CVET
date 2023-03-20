@@ -14,6 +14,7 @@ class FewShotModel(nn.Module):
             self.encoder = ResNet()
         else:
             raise ValueError('')
+        self.proj = Proj(hdim, args.D, args)
 
     def split_instance(self):
         args = self.args
@@ -32,28 +33,36 @@ class FewShotModel(nn.Module):
                 .view(1, args.eval_query,args.eval_way)
             )
 
-    def forward(self, x, get_feature=False, require_losses=False):
+    def forward(self, x, get_feature=False, require_losses=False, get_prototype=False):
         if get_feature:
-            return self.encoder(x)
-        else:
-            x = x.squeeze(0)
             x = self.encoder(x)
-            num_inst = x.shape[0]
-            embed = self.gap(x).view(num_inst, -1)
+            x = self.gap(x).view(x.shape[0], -1)
+            ans = {'h': x}
+            if get_prototype:
+                ans['proto'] = self._m_forward(x)
+            if require_losses:
+                ans['z'] = self.get_z(x)
+            return ans
+        else:
+            x = self.encoder(x)
+            embed = self.gap(x).view(x.shape[0], -1)
             ans = {'logits': self._forward(embed)}
             if require_losses:
-                ans['q'], ans['k'], ans['v'] = self.get_qkv(x)
+                ans['q'], ans['k'], ans['v'], ans['u'] = self.get_qkvu(x)
                 ans['z'] = self.get_z(embed)
             return ans
 
     # def _forward(self, x, support_idx, query_idx):
     #     raise NotImplementedError('Suppose to be implemented by subclass')
 
+    def _m_forward(self, x):
+        raise NotImplementedError('Suppose to be implemented by subclass')
     def _forward(self, x):
         raise NotImplementedError('Suppose to be implemented by subclass')
 
-    def get_qkv(self, x):
+    def get_qkvu(self, x):
         raise NotImplementedError('Suppose to be implemented by subclass')
 
     def get_z(self, x):
-        raise NotImplementedError('Suppose to be implemented by subclass')
+        return self.proj(x)
+

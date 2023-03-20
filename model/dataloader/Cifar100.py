@@ -73,6 +73,9 @@ class Cifar_100(Dataset):
     def __len__(self):
         return len(self.data)
 
+    def get_labels(self):
+        return self.labels
+
     def __getitem__(self, i):
         dat, label = self.data[i], self.labels[i]
         dat = dat.transpose(1, 2, 0)

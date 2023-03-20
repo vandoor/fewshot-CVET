@@ -18,15 +18,13 @@ class PreMod(FewShotModel):
             raise ValueError('')
         self.classify = Classifier(args)
         self.slf_attn = Attention(hdim, hdim, hdim, dropout=0.5)
-        self.proj = Proj(640, args.D, args)
+        self.pru = nn.Sequential(nn.Linear(hdim, args.D), nn.ReLU())
 
-    def get_qkv(self, x):
+    def get_qkvu(self, x):
         bsz, cha, hei, wei = x.shape
         x = x.permute(0, 2, 3, 1).view(bsz, hei*wei, cha)
-        return self.slf_attn.produce_qkv(x, x, x)
+        return *self.slf_attn.produce_qkv(x, x, x), self.pru(x)
 
-    def get_z(self, x):
-        return self.proj(x)
 
     def _forward(self, x):
         return self.classify(x)

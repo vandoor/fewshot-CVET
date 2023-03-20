@@ -57,6 +57,9 @@ class Averager():
         self.avg = (self.n * self.avg + x) / (self.n + 1)
         self.n += 1
 
+    def item(self):
+        return self.avg
+
 
 def count_acc(logits, label):
     prediction = torch.argmax(logits, dim=1)
@@ -147,7 +150,7 @@ def get_command_line_parser():
     parser.add_argument('--log_interval', type=int, default=50)
     parser.add_argument('--episodes_per_epoch', type=int, default=100)
     parser.add_argument('--num_eval_episodes', type=int, default=600)
-    parser.add_argument('--eval_interval', type=int, default=5)
+    parser.add_argument('--eval_interval', type=int, default=1)
 
     parser.add_argument('--model_class', type=str, default='PreMod')
     parser.add_argument('--meta_model_class', type=str, default='metamod')
@@ -178,7 +181,7 @@ def get_command_line_parser():
     # optimizer
     parser.add_argument('--weight_decay', type=float, default=5e-4)
     parser.add_argument('--momentum', type=float, default=0.9)
-    parser.add_argument('--init_lr', type=float,  default=0.1)
+    parser.add_argument('--init_lr', type=float,  default=1e-3)
     parser.add_argument('--lr_scheduler', type=str, default='cosine', choices=['cosine','step'])
 
     parser.add_argument('--gpu', default='0')

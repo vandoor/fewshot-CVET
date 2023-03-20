@@ -13,7 +13,7 @@ class Trainer(object, metaclass=abc.ABCMeta):
         self.train_epoch = 0
         self.max_steps = args.episodes_per_epoch * args.max_epoch
         self.dt, self.ft = Averager(), Averager()
-        self.bt, self.ot = Averager(), Averager()
+        self.bt, self.ot, self.lt = Averager(), Averager(), Averager()
         self.timer = Timer()
 
         self.trlog = {}
@@ -30,7 +30,7 @@ class Trainer(object, metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def evaluate_test(self, data_loader):
+    def evaluate_test(self):
         pass
 
     @abc.abstractmethod
