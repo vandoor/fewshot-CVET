@@ -9,7 +9,7 @@ from model.networks.attention import Attention
 
 class MetaMod(FewShotModel):
     def __init__(self, args):
-        super(MetaMod).__init__(args)
+        super(MetaMod, self).__init__(args)
         self.args = args
         if args.backbone_class == 'Res12':
             hdim = 640
@@ -20,11 +20,14 @@ class MetaMod(FewShotModel):
     def _m_forward(self, x):
         # (n_way*n_shot, embed)
         embed_dim = x.shape[-1]
-        ckr = x.reshape(self.args.n_way, -1, embed_dim)
-        ckr = torch.mean(ckr, dim=1)
-        # ckr: (way, emb)
+        ckr = x.reshape(self.args.way, -1, embed_dim)
+        ckr = torch.mean(ckr, dim=1, keepdim=True)
+        # ckr: (way, 1, emb)
         q, k, v = self.slf_attn.produce_qkv(ckr, ckr, ckr)
-        new_ckr = self.slf_attn(q, k, v)
+        print(f'q,k,v shape: {q.shape},{k.shape},{v.shape},{ckr.shape}')
+        new_ckr = self.slf_attn(q, k, v, ckr)
+        # new_ckr : (way, 1, emb)
+        new_ckr = new_ckr.squeeze(1)
         return new_ckr
 
 

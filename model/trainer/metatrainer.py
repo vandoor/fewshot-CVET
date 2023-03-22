@@ -32,9 +32,10 @@ class MetaTrainer(Trainer):
             for batch in self.train_loader:
                 self.train_step += 1
                 print(self.train_step)
-                if torch.cuda.is_available():
-                    batch = batch.cuda()
                 s_img1, s_img2, s_labels, q_img1, q_img2, q_labels, lid_list = batch
+                if torch.cuda.is_available():
+                    s_img1, s_img2, s_labels = s_img1.cuda(), s_img2.cuda(), s_labels.cuda()
+                    q_img1, q_img2, q_labels = q_img1.cuda(), q_img2.cuda(), q_labels.cuda()
                 # s : n_way * shot samples
                 # q : n_way * query samples
                 # labels: n_way * (shot or query)
@@ -72,7 +73,7 @@ class MetaTrainer(Trainer):
                                 num = torch.sum((h-proto[k])**2)
                                 # num = torch.log(torch.exp(-num))
                                 loss_ij += -(-num - den)
-                        loss_meta += loss_ij / (args.n_way * args.n_query)
+                        loss_meta += loss_ij / (args.way * args.query)
                 loss_meta /= 4
                 total_loss = loss_meta
 
@@ -82,7 +83,7 @@ class MetaTrainer(Trainer):
                 # o1 = torch.mean(sz1.view(args.way, -1, embed), dim=1)
                 # o2 = torch.mean(sz2.view(args.way, -1, embed), dim=1)
                 # protoz = self.model
-                print(total_loss)
+                print('loss:',total_loss)
                 loss_time = time.time()
                 self.lt.add(loss_time - forward_tm)
                 self.optimizer.zero_grad()
@@ -103,19 +104,45 @@ class MetaTrainer(Trainer):
     def evaluate(self, data_loader):
         args = self.args
         self.model.eval()
-        record = np.zeros((args.num_eval_episodes, 2))
+        record = np.zeros((args.num_eval_episodes,))
         print('best epoch {}, best val acc={:.4f} + {:.4f}'.format(
             self.trlog['max_acc_epoch'],
             self.trlog['max_acc'],
             self.trlog['max_acc_interval']
         ))
         with torch.no_grad():
+            labels = torch.cat([torch.tensor(i).float().repeat(args.eval_query) for i in range(args.eval_way)])
             for i, batch in enumerate(data_loader):
+                s_img, s_img2, s_labels, q_img, q_img2, q_labels, lid_list = batch
                 if torch.cuda.is_available():
-                    batch = batch.cuda()
-                s_img1, s_img2, s_labels, q_img1, q_img2, q_labels, lid_list = batch
+                    s_img, s_img2, s_labels = s_img.cuda(), s_img2.cuda(), s_labels.cuda()
+                    q_img, q_img2, q_labels = q_img.cuda(), q_img2.cuda(), q_labels.cuda()
 
+                s_res = self.model(s_img, get_feature=True, require_losses=False, get_prototype=True)
+                q_res = self.model(q_img, get_feature=True, require_losses=False)
+                proto = s_res['proto'].unsqueeze(0)  # ->(1, n_way, embed)
+                qh = q_res['h'].unsqueeze(1)  # ->(n_way*n_query, 1, embed)
+                proto = proto.expand(args.eval_way*args.eval_query, *proto.shape[1:])  # ->(n_way*n_query, n_way, embed)
+                print('qh shape:', qh.shape)
+                logits = -torch.sum((qh-proto)**2, dim=2)  # ->(n_way*n_query, n_way)
+                acc = count_acc(logits, labels)
+                record[i] = acc
+        va, vap = compute_confidence_interval(record[:, 1])
         self.model.train()
+        return 0, va, vap
 
+    def evaluate_test(self):
+        pass
 
+    def final_record(self):
+        with open(osp.join(self.args.save_path, f"{self.trlog['test_acc']}+{self.trlog['test_acc_interval']}")) as f:
+            f.write("best epoch {}, best val_acc={:.4f} + {:.4f}\n".format(
+                self.trlog['max_acc_epoch'],
+                self.trlog['max_acc'],
+                self.trlog['max_acc_interval']
+            ))
+            f.write('Test acc={:.4f} + {:.4f}\n'.format(
+                self.trlog['test_acc'],
+                self.trlog['test_acc_interval']
+            ))
 

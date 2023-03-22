@@ -56,4 +56,3 @@ class Attention(nn.Module):
         output = self.dropout(self.fc(output))
         output = self.layer_norm(output + residual)
         return output
-

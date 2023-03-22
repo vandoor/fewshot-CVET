@@ -52,7 +52,6 @@ class PreTrainer(Trainer):
 
                 labels = eye[gt_label].view(len(batch[2]), -1)
                 loss_CE = F.cross_entropy(logits, labels)
-                # print('ce loss:',loss_CE)
 
                 total_loss = loss_CE
 
@@ -73,7 +72,6 @@ class PreTrainer(Trainer):
                 total_loss += args.alpha1 * loss_global_ss
 
                 # print(f'qkv shape: {q.shape}, {k.shape}, {v.shape}')
-
                 bs, HW, DIM = q.shape
                 num_list = self.model.slf_attn.attention(q, k_, v_)[0]
                 num_list2 = self.model.slf_attn.attention(q_, k, v)[0]
@@ -81,7 +79,7 @@ class PreTrainer(Trainer):
                 num_list2 = F.normalize(num_list2, p=2, dim=2)
                 num_list = (torch.sum(torch.sum(num_list * num_list2, dim=2), dim=1) / HW)
                 num_list = (num_list / args.tau2).repeat(2)
-                print("numlist:", num_list)
+                # print("numlist:", num_list)
                 den_list = torch.zeros((2 * bs)).cuda()
                 q = torch.cat((q, q_), dim=0)
                 k = torch.cat((k, k_), dim=0)
@@ -92,10 +90,6 @@ class PreTrainer(Trainer):
                     v_rot = torch.cat((v[l:], v[:l]), dim=0)
                     L = F.normalize(self.model.slf_attn.attention(q_rot, k, v)[0], p=2, dim=2)
                     R = F.normalize(self.model.slf_attn.attention(q, k_rot, v_rot)[0], p=2, dim=2)
-                    # print(L.shape)
-                    # print(L)
-                    # print(R)
-                    # print(L*R)
                     delta_batch = torch.exp(torch.sum(torch.sum(L * R, dim=2), dim=1) / HW / args.tau2)
                     # print(delta_batch)
                     den_list += delta_batch
@@ -104,7 +98,7 @@ class PreTrainer(Trainer):
                 # print("----------------")
                 # print(num_list)
                 # print(den_list)
-                loss_map_map_ss = - torch.sum(num_list-torch.log(den_list+1e-4))
+                loss_map_map_ss = - torch.sum(num_list - torch.log(den_list + 1e-4))
                 total_loss += loss_map_map_ss * args.alpha2
                 # print(u.shape)
 
@@ -112,10 +106,10 @@ class PreTrainer(Trainer):
                 # print('z:',z.unsqueeze(1).shape)
                 # print('zlist:', zlist.shape)
                 # print('u:', u.shape)
-                num_list = torch.exp(torch.sum(torch.sum(u * z_.unsqueeze(1), dim=2), dim=1) / HW / args.tau3)
-                num_list = torch.cat(
-                    (num_list, torch.exp(torch.sum(torch.sum(u_ * z.unsqueeze(1), dim=2), dim=1) / HW / args.tau3)),
-                    dim=0)
+                num_list = torch.cat((
+                    torch.exp(torch.sum(torch.sum(u * z_.unsqueeze(1), dim=2), dim=1) / HW / args.tau3),
+                    torch.exp(torch.sum(torch.sum(u_ * z.unsqueeze(1), dim=2), dim=1) / HW / args.tau3)
+                ))
                 den_list = torch.zeros([2 * bs]).cuda()
                 ulist = torch.cat((u, u_), dim=0)
                 for l in range(2 * bs):
@@ -124,24 +118,25 @@ class PreTrainer(Trainer):
                         torch.sum(torch.sum(ulist * zlist.unsqueeze(1), dim=2), dim=1) / HW / args.tau3)
 
                 loss_vec_map_ss = -torch.sum(torch.log(num_list / den_list + 1e-4))
-                # total_loss += loss_vec_map_ss * args.alpha2
-
+                total_loss += loss_vec_map_ss * args.alpha2
                 loss_global_s = 0
 
                 for i in range(2 * bs):
                     idx = torch.arange(bs)[gt_label == gt_label[i % bs]]
                     idx = torch.cat((idx, idx + bs), dim=0)
-                    num = torch.sum(torch.exp(torch.sum(zlist[i] * zlist[idx] / args.tau4, dim=1)))
+                    num = torch.sum(torch.exp(torch.sum(zlist[i] * zlist[idx] / args.tau4, dim=1))) - \
+                          torch.exp(zlist[i].dot(zlist[i]) / args.tau4)
                     # print(zlist[i])
                     # print(zlist[idx])
-                    den = torch.sum(torch.exp(torch.sum(zlist[i] * zlist / args.tau4, dim=1))) \
-                          - torch.exp(zlist[i].dot(zlist[i]) / args.tau4)
+                    den = torch.sum(torch.exp(torch.sum(zlist[i] * zlist / args.tau4, dim=1))) - \
+                          torch.exp(zlist[i].dot(zlist[i]) / args.tau4)
                     # print(idx)
                     # print("num:", num)
                     # print("den:", den)
                     loss_global_s += -torch.log(num / den + 1e-4) / idx.shape[0]
 
-                # total_loss += loss_global_s * args.alpha3
+                print('loss_global', loss_global_s)
+                total_loss += loss_global_s * args.alpha3
                 print('total_loss:', total_loss)
 
                 tl1.add(total_loss.item())
@@ -157,6 +152,8 @@ class PreTrainer(Trainer):
                 self.ot.add(optimize_tm - backward_tm)
 
                 start_tm = time.time()
+                if self.train_step % args.episodes_per_epoch == 0:
+                    break
 
             self.lr_scheduler.step()
             self.try_evaluate(epoch)
@@ -194,7 +191,7 @@ class PreTrainer(Trainer):
                 acc = count_acc(logits, gt_label)
                 record[i - 1, 0] = loss.item()
                 record[i - 1, 1] = acc
-        assert (i == record.shape[0])
+        # assert (i == record.shape[0])
         vl, _ = compute_confidence_interval(record[:, 0])
         va, vap = compute_confidence_interval(record[:, 1])
         self.model.train()

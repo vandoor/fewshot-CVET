@@ -131,7 +131,6 @@ class TaskSampler(Sampler):
         ).reshape((self.n_way, self.n_shot+self.n_query))
         support_labels = all_labels[:, :self.n_shot].flatten()
         query_labels = all_labels[:, self.n_shot:].flatten()
-
         return (
             support_images1,
             support_images2,

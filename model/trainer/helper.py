@@ -11,6 +11,8 @@ from model.models.metamod import MetaMod
 def get_dataloader(args):
     if args.dataset == 'cifar100':
         from model.dataloader.Cifar100 import Cifar_100 as Dataset
+    elif args.dataset == 'cifar10':
+        from model.dataloader.Cifar10 import Cifar_10 as Dataset
     else:
         raise ValueError('Non-supported Dataset.')
 
@@ -117,22 +119,25 @@ def prepare_optimizer(model, args):
 def get_meta_dataloader(args):
     if args.dataset == 'cifar100':
         from model.dataloader.Cifar100 import Cifar_100 as Dataset
+    elif args.dataset == 'cifar10':
+        from model.dataloader.Cifar10 import Cifar_10 as Dataset
     else:
         raise ValueError('Non-supported Dataset.')
 
     num_episodes = args.episodes_per_epoch
     train_set = Dataset('train', args, augment=not args.no_augment)
-    train_sampler = TaskSampler(train_set, args.n_way, args.n_shot, args.n_query, num_episodes)
+    train_sampler = TaskSampler(train_set, args.way, args.shot, args.query, num_episodes)
+    print('args.num_workers:',args.num_workers)
     train_loader = DataLoader(dataset=train_set, num_workers=args.num_workers, batch_sampler=train_sampler,
                               pin_memory=True, collate_fn=train_sampler.episodic_collate_fn)
 
     val_set = Dataset('val', args)
-    val_sampler = TaskSampler(val_set, args.n_way, args.n_shot, args.n_query, num_episodes)
+    val_sampler = TaskSampler(val_set, args.way, args.eval_shot, args.eval_query, args.num_eval_episodes)
     val_loader = DataLoader(dataset=val_set, num_workers=args.num_workers, batch_sampler=val_sampler, pin_memory=True,
                             collate_fn=val_sampler.episodic_collate_fn)
 
     test_set = Dataset('test', args)
-    test_sampler = TaskSampler(test_set, args.n_way, args.n_shot, args.n_query, num_episodes)
+    test_sampler = TaskSampler(test_set, args.way, args.eval_shot, args.eval_query, args.num_eval_episodes)  # TODO
     test_loader = DataLoader(dataset=test_set, num_workers=args.num_workers, batch_sampler=test_sampler,
                              pin_memory=True, collate_fn=test_sampler.episodic_collate_fn)
     return train_loader, val_loader, test_loader
