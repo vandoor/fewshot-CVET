@@ -25,7 +25,6 @@ class PreMod(FewShotModel):
         x = x.permute(0, 2, 3, 1).view(bsz, hei*wei, cha)
         return *self.slf_attn.produce_qkv(x, x, x), self.pru(x)
 
-
     def _forward(self, x):
         return self.classify(x)
 

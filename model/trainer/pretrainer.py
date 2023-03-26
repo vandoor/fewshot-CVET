@@ -1,3 +1,4 @@
+import math
 import time
 import os.path as osp
 import numpy as np
@@ -24,6 +25,28 @@ class PreTrainer(Trainer):
             label = label.cuda()
         return label
 
+    def calc_map_map_sim(self, q, k, v):
+        d = math.sqrt(k.shape[-1])
+        # a: HW
+        # b: D
+        # c: HW
+        # n,m: 2Batch_size
+        sft = torch.einsum('nab,mbc->nmac', q, k.transpose(1, 2))
+        sft = torch.softmax(sft/d, dim=3)
+        vba = torch.einsum('nmac,mcb->nmab', sft, v)
+        vba = F.normalize(vba, p=2, dim=3)
+        vab = vba.transpose(0, 1)
+        vv = torch.sum(vba*vab, dim=3)
+        sim = torch.mean(vv, dim=2)
+        return sim
+
+    def calc_vec_map_sim(self, u, z):
+        # z: (2bs, D) normalized
+        # u: (2bs, HW, D) normalized
+        sim_hw = torch.einsum('nab,mb->nma', u, z)
+        return torch.mean(sim_hw, 2)
+
+
     def train(self):
         # TODO
         args = self.args
@@ -37,7 +60,7 @@ class PreTrainer(Trainer):
             start_tm = time.time()
             for batch in self.train_loader:
                 self.train_step += 1
-                print(self.train_step)
+                # print(self.train_step)
                 if torch.cuda.is_available():
                     data1, data2, gt_label = [_.cuda() for _ in batch]
                 else:
@@ -70,54 +93,33 @@ class PreTrainer(Trainer):
                 num_list = torch.exp(num_list / args.tau1)
                 loss_global_ss = -torch.sum(torch.log(num_list / den_list + 1e-5))
                 total_loss += args.alpha1 * loss_global_ss
+                g_loss_tm = time.time()
+                # print(f'loss_global_s_s time: {(g_loss_tm - forward_tm)*1000} ms')
 
-                # print(f'qkv shape: {q.shape}, {k.shape}, {v.shape}')
                 bs, HW, DIM = q.shape
-                num_list = self.model.slf_attn.attention(q, k_, v_)[0]
-                num_list2 = self.model.slf_attn.attention(q_, k, v)[0]
-                num_list = F.normalize(num_list, p=2, dim=2)
-                num_list2 = F.normalize(num_list2, p=2, dim=2)
-                num_list = (torch.sum(torch.sum(num_list * num_list2, dim=2), dim=1) / HW)
-                num_list = (num_list / args.tau2).repeat(2)
-                # print("numlist:", num_list)
-                den_list = torch.zeros((2 * bs)).cuda()
                 q = torch.cat((q, q_), dim=0)
                 k = torch.cat((k, k_), dim=0)
                 v = torch.cat((v, v_), dim=0)
-                for l in range(1, 2 * bs):
-                    q_rot = torch.cat((q[l:], q[:l]), dim=0)
-                    k_rot = torch.cat((k[l:], k[:l]), dim=0)
-                    v_rot = torch.cat((v[l:], v[:l]), dim=0)
-                    L = F.normalize(self.model.slf_attn.attention(q_rot, k, v)[0], p=2, dim=2)
-                    R = F.normalize(self.model.slf_attn.attention(q, k_rot, v_rot)[0], p=2, dim=2)
-                    delta_batch = torch.exp(torch.sum(torch.sum(L * R, dim=2), dim=1) / HW / args.tau2)
-                    # print(delta_batch)
-                    den_list += delta_batch
-                    # print(den)
-
-                # print("----------------")
-                # print(num_list)
-                # print(den_list)
-                loss_map_map_ss = - torch.sum(num_list - torch.log(den_list + 1e-4))
+                sim1 = self.calc_map_map_sim(q, k, v)
+                exp_sim1 = torch.exp(sim1/args.tau2)
+                num_list = exp_sim1[:bs, bs:].diag().repeat(2)
+                den_list = torch.sum(exp_sim1, dim=1) - exp_sim1.diag()
+                loss_map_map_ss = - torch.sum(torch.log(num_list/den_list+1e-4))
+                # print('map_map_loss', loss_map_map_ss)
                 total_loss += loss_map_map_ss * args.alpha2
-                # print(u.shape)
-
+                mapmap_tm = time.time()
+                # print(f'map_map_loss time: {1000*(mapmap_tm - g_loss_tm) }ms')
                 u = F.normalize(u, p=2, dim=2)
-                # print('z:',z.unsqueeze(1).shape)
-                # print('zlist:', zlist.shape)
-                # print('u:', u.shape)
-                num_list = torch.cat((
-                    torch.exp(torch.sum(torch.sum(u * z_.unsqueeze(1), dim=2), dim=1) / HW / args.tau3),
-                    torch.exp(torch.sum(torch.sum(u_ * z.unsqueeze(1), dim=2), dim=1) / HW / args.tau3)
-                ))
-                den_list = torch.zeros([2 * bs]).cuda()
+                u_ = F.normalize(u_, p=2, dim=2)
                 ulist = torch.cat((u, u_), dim=0)
-                for l in range(2 * bs):
-                    zlist = torch.cat((zlist[1:], zlist[:1]), dim=0)
-                    den_list += torch.exp(
-                        torch.sum(torch.sum(ulist * zlist.unsqueeze(1), dim=2), dim=1) / HW / args.tau3)
-
-                loss_vec_map_ss = -torch.sum(torch.log(num_list / den_list + 1e-4))
+                sim2 = self.calc_vec_map_sim(ulist, zlist)
+                exp_sim2 = torch.exp(sim2/args.tau3)
+                num_list = exp_sim2[:bs, bs:].diag().repeat(2)
+                den_list = torch.sum(exp_sim2, dim=1) - exp_sim2.diag()
+                loss_vec_map_ss = -torch.sum(torch.log(num_list/den_list + 1e-4))
+                # print('vec_map_loss', loss_vec_map_ss)
+                vecmap_tm = time.time()
+                # print(f'vecmap loss time :{1000*(vecmap_tm-mapmap_tm)} ms')
                 total_loss += loss_vec_map_ss * args.alpha2
                 loss_global_s = 0
 
@@ -135,10 +137,11 @@ class PreTrainer(Trainer):
                     # print("den:", den)
                     loss_global_s += -torch.log(num / den + 1e-4) / idx.shape[0]
 
-                print('loss_global', loss_global_s)
+                # print('loss_global', loss_global_s)
+                g_loss_tm = time.time()
+                # print(f'global loss time : {(g_loss_tm - vecmap_tm)*1000} ms')
                 total_loss += loss_global_s * args.alpha3
-                print('total_loss:', total_loss)
-
+                # print('total_loss:', total_loss)
                 tl1.add(total_loss.item())
                 ta.add(acc)
 
@@ -152,12 +155,22 @@ class PreTrainer(Trainer):
                 self.ot.add(optimize_tm - backward_tm)
 
                 start_tm = time.time()
-                if self.train_step % args.episodes_per_epoch == 0:
-                    break
 
-            self.lr_scheduler.step()
+                if self.train_step % args.episodes_per_epoch == 0:
+                    print('total steps:', self.train_step)
+                    vl, va, vap = self.evaluate(self.val_loader)
+                    if va >= self.trlog['max_acc']:
+                        self.trlog['max_acc'] = va
+                        self.trlog['max_acc_interval'] = vap
+                        self.trlog['max_acc_epoch'] = self.train_epoch
+                        self.save_model('max_acc')
+
+            # self.lr_scheduler.step()
             self.try_evaluate(epoch)
             print(f'ETA:{self.timer.measure()}/{self.timer.measure(self.train_epoch / args.max_epoch)}')
+
+            if self.train_epoch % 1 == 0:
+                self.save_model(f'epoch-{self.train_epoch}')
 
         torch.save(self.trlog, osp.join(args.save_path, 'trlog'))
         self.save_model('epoch-last')
