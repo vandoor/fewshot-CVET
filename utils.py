@@ -148,7 +148,7 @@ def get_command_line_parser():
     parser.add_argument('--no_augment', action='store_true', default=False)
     parser.add_argument('--log_interval', type=int, default=50)
     parser.add_argument('--episodes_per_epoch', type=int, default=100)
-    parser.add_argument('--num_eval_episodes', type=int, default=600)
+    parser.add_argument('--num_eval_episodes', type=int, default=1000)
     parser.add_argument('--eval_interval', type=int, default=1)
 
     parser.add_argument('--model_class', type=str, default='PreMod', choices=['PreMod', 'MetaMod'])

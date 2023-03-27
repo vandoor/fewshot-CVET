@@ -24,6 +24,7 @@ def get_dataloader(args):
     args.num_class = trainset.num_class
     args.total_samples = trainset.__len__()
     # train_sampler = DirectSampler(n_batch=args.episodes_per_epoch, total_idx=args.total_samples, n_per=args.batch_size)
+    # 最后决定pretrain的时候不用sampler，直接随机采样
     train_loader = DataLoader(dataset=trainset, num_workers=0, batch_size=args.batch_size, pin_memory=False)
 
     valset = Dataset('val', args)
@@ -35,44 +36,10 @@ def get_dataloader(args):
     test_loader = DataLoader(dataset=testset, num_workers=0, batch_size=args.batch_size, pin_memory=False)
     return train_loader, val_loader, test_loader
 
-    """
-    train_sampler = CategoriesSampler(trainset.labels,
-    # TODO: does the n_batch equal episodes_per_epoch?
-                                      num_episodes,
-                                      max(args.way, args.num_class),
-    # TODO: per=shot+query
-                                      args.shot+args.query
-    )
-    train_loader = DataLoader(dataset=trainset,
-                              num_workers=num_workers,
-                              batch_sampler=train_sampler,
-                              pin_memory=True)
-    valset = Dataset('val',args)
-    
-    val_sampler = CategoriesSampler(valset.labels,
-                                    args.num_eval_episodes,
-                                    args.eval_way,
-                                    args.eval_shot+args.eval_query)
-    val_loader = DataLoader(dataset=valset,
-                            batch_sampler=val_sampler,
-                            num_workers=args.num_workers,
-                            pin_memory=True)
-    testset = Dataset('test', args)
-    test_sampler = CategoriesSampler(testset.labels,
-                                     10000,  # args.num_eval_episodes
-                                     args.eval_way,
-                                     args.eval_shot+args.eval_query
-                                     )
-    test_loader = DataLoader(dataset=testset,
-                             batch_sampler=test_sampler,
-                             num_workers=args.num_workers,
-                             pin_memory=True)
-    return train_loader, val_loader, test_loader
-    """
 
 def prepare_model(args):
     model = eval(args.model_class)(args)
-    # load pre-trained model (without FC weights)
+    # 加载模型
     if args.init_weights is not None:
         model_dict = model.state_dict()
         pretrained_dict = torch.load(args.init_weights)['params']
@@ -126,6 +93,7 @@ def get_meta_dataloader(args):
 
     num_episodes = args.episodes_per_epoch
     train_set = Dataset('train', args, augment=not args.no_augment)
+    # 用TaskSampler，方便把batch划分成query和support
     train_sampler = TaskSampler(train_set, args.way, args.shot, args.query, num_episodes)
     print('args.num_workers:',args.num_workers)
     train_loader = DataLoader(dataset=train_set, num_workers=args.num_workers, batch_sampler=train_sampler,
@@ -137,7 +105,7 @@ def get_meta_dataloader(args):
                             collate_fn=val_sampler.episodic_collate_fn)
 
     test_set = Dataset('test', args)
-    test_sampler = TaskSampler(test_set, args.way, args.eval_shot, args.eval_query, args.num_eval_episodes)  # TODO
+    test_sampler = TaskSampler(test_set, args.way, args.eval_shot, args.eval_query, args.num_eval_episodes)
     test_loader = DataLoader(dataset=test_set, num_workers=args.num_workers, batch_sampler=test_sampler,
                              pin_memory=True, collate_fn=test_sampler.episodic_collate_fn)
     return train_loader, val_loader, test_loader
@@ -148,7 +116,8 @@ def prepare_meta_model(args)->MetaMod:
     if args.init_weights is not None:
         model_dict = model.state_dict()
         pretrained_dict = torch.load(args.init_weights)['params']
-        pretrained_dict = {k:v for k,v in pretrained_dict.items() if k in model_dict}
+        pretrained_dict = {k:v for k,v in pretrained_dict.items() if k in model_dict and k.split('.')[0] != 'slf_attn'}
+        # pretrain的self_attn和meta_train的不是一个目的
         print(f'{pretrained_dict.keys()} are loaded!')
         model_dict.update(pretrained_dict)
         model.load_state_dict(model_dict)

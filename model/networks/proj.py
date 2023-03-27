@@ -6,9 +6,8 @@ import torch.nn.functional as F
 class Proj(nn.Module):
     def __init__(self, in_dim, out_dim, args):
         super().__init__()
-        if args.backbone_class == 'Res12':
+        if args.backbone_class == 'Res12' or args.backbone_class == 'Res18':
             hdim = args.D
-            # TODO : determine the size
         else:
             raise ValueError("no other modules are for the backbone")
 

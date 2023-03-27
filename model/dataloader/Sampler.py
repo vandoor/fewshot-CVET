@@ -113,6 +113,7 @@ class TaskSampler(Sampler):
     def episodic_collate_fn(self, input_data:List[Tuple[Tensor, Tensor, int]])\
             -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, List[int]]:
         true_class_ids = list({x[2] for x in input_data})
+        unique_class_ids = list(set(true_class_ids))
         all_images1 = torch.cat([x[0].unsqueeze(0) for x in input_data])
         all_images1 = all_images1.reshape(
             (self.n_way, self.n_shot+self.n_query, *all_images1.shape[1:])
@@ -127,7 +128,7 @@ class TaskSampler(Sampler):
         query_images2 = all_images2[:, self.n_shot:].reshape((-1, *all_images2.shape[2:]))
 
         all_labels = torch.tensor(
-            [true_class_ids.index(x[2]) for x in input_data]
+            [unique_class_ids.index(x[2]) for x in input_data]
         ).reshape((self.n_way, self.n_shot+self.n_query))
         support_labels = all_labels[:, :self.n_shot].flatten()
         query_labels = all_labels[:, self.n_shot:].flatten()
@@ -138,7 +139,7 @@ class TaskSampler(Sampler):
             query_images1,
             query_images2,
             query_labels,
-            true_class_ids
+            unique_class_ids
         )
 
 

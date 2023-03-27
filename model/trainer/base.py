@@ -40,7 +40,6 @@ class Trainer(object, metaclass=abc.ABCMeta):
     def try_evaluate(self, epoch):
         args = self.args
         if self.train_epoch % args.eval_interval == 0:
-            # TODO : val_loader
             vl, va, vap = self.evaluate(self.val_loader)
             self.logger.add_scalar('val_loss', float(vl), self.train_epoch)
             self.logger.add_scalar('val_acc', float(va), self.train_epoch)
@@ -51,11 +50,10 @@ class Trainer(object, metaclass=abc.ABCMeta):
                 self.trlog['max_acc'] = va
                 self.trlog['max_acc_interval'] = vap
                 self.trlog['max_acc_epoch'] = self.train_epoch
-                self.save_model('max_acc')
+                self.save_model('max_acc', str(va))
 
     def try_logging(self, tl1, tl2, ta, tg=None):
         args = self.args
-        # TODO : optimizer
         if self.train_step % args.log_interval == 0:
             print('epoch {}, train {:06g}/{:06g}, total loss={:.4f}, loss={:.4f}, acc={:.4f}, lr={:.4g}'.format(
                 self.train_epoch, self.train_step, self.max_steps,
@@ -72,11 +70,10 @@ class Trainer(object, metaclass=abc.ABCMeta):
             )
             self.logger.dump()
 
-    def save_model(self, name):
-        # TODO: model
+    def save_model(self, name, acc=''):
         torch.save(
             dict(params=self.model.state_dict()),
-            osp.join(self.args.save_path, name+'.pth')
+            osp.join(self.args.save_path, name + 'acc' + acc + '.pth')
         )
 
     def __str__(self):

@@ -14,6 +14,8 @@ class PreMod(FewShotModel):
         super(PreMod, self).__init__(args)
         if args.backbone_class == 'Res12':
             hdim = 640
+        elif args.backbone_class == 'Res18':
+            hdim = 512
         else:
             raise ValueError('')
         self.classify = Classifier(args)
@@ -21,8 +23,9 @@ class PreMod(FewShotModel):
         self.pru = nn.Sequential(nn.Linear(hdim, args.D), nn.ReLU())
 
     def get_qkvu(self, x):
-        bsz, cha, hei, wei = x.shape
-        x = x.permute(0, 2, 3, 1).view(bsz, hei*wei, cha)
+        bsz, channels, hei, wei = x.shape
+        x = x.permute(0, 2, 3, 1).view(bsz, hei*wei, channels)
+        # 把attention拆开了一下，用来计算q，k，v
         return *self.slf_attn.produce_qkv(x, x, x), self.pru(x)
 
     def _forward(self, x):

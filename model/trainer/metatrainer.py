@@ -39,6 +39,7 @@ class MetaTrainer(Trainer):
                 # s : n_way * shot samples
                 # q : n_way * query samples
                 # labels: n_way * (shot or query)
+                # labels' range: way*(shot+query)
                 # sup_img = torch.cat([s_img1, s_img2], dim=0)
                 # qry_img = torch.cat([q_img1, q_img2], dim=0)
                 data_tm = time.time()
@@ -50,39 +51,44 @@ class MetaTrainer(Trainer):
 
                 qh = [q_result1['h'], q_result2['h']]
                 sp = [s_result1['proto'], s_result2['proto']]
-                embed = qh[0].shape[-1]
-                print('qhshape:', qh[0].shape)
-                print('spshape:', sp[0].shape)
+                tot_q, embed = qh[0].shape[0], qh[0].shape[-1]
+                print('s_labels: ', s_labels)
+                print('q_labels: ', q_labels)
+                # print('qhshape:', qh[0].shape)
+                # print('spshape:', sp[0].shape)
                 # qh[0] : (n_way*n_query, embed)
                 # sp[0] : (n_way, embed)
                 forward_tm = time.time()
                 self.ft.add(forward_tm - data_tm)
                 loss_meta = torch.tensor(0.0).cuda()
                 for i in range(2):
-                    query_embed = qh[i].view(args.way, -1, embed)
+                    query_embed = qh[i]
+                    # (n_way*n_query, embed)
+                    query_embed_expanded = query_embed.unsqueeze(1)
+                    query_embed_expanded = query_embed_expanded.expand(tot_q, args.way, embed)
+                    # (n_way*n_query, n_way, embed)
                     for j in range(2):
                         proto = sp[j]
-                        loss_ij = torch.tensor(0.0).cuda()
-                        for k in range(args.way):
-                            for u in range(args.query):
-                                h = query_embed[k][u]
-                                # h : (embed)
-                                # proto : (n_way, embed)
-                                dist = torch.sum((h.unsqueeze(0) - proto)**2, dim=1)
-                                den = torch.log(torch.sum(torch.exp(-dist)))
-                                num = torch.sum((h-proto[k])**2)
-                                # num = torch.log(torch.exp(-num))
-                                loss_ij += -(-num - den)
-                        loss_meta += loss_ij / (args.way * args.query)
-                loss_meta /= 4
+                        # (n_way, embed)
+                        proto_expanded = proto.unsqueeze(0)
+                        # (1, n_way, embed)
+                        P_mat = torch.sum((query_embed_expanded - proto_expanded)**2, dim=2)
+                        # (n_way*n_query, n_way)
+                        P_mat = -torch.sqrt(P_mat)
+                        soft_Pmat = F.softmax(P_mat, dim=1)
+                        num = soft_Pmat[torch.arange(tot_q), q_labels]
+                        # print('num: ', num)
+                        loss_meta += 0.25 * torch.sum(-torch.log(num))
+                        # print(torch.sum(-torch.log(num)))
+
                 total_loss = loss_meta
 
-                # qz1, qz2 = q_result1['z'], q_result2['z']
-                # sz1, sz2 = s_result1['z'], s_result2['z']
-                # # (n_way * n_shot, embed)
-                # o1 = torch.mean(sz1.view(args.way, -1, embed), dim=1)
-                # o2 = torch.mean(sz2.view(args.way, -1, embed), dim=1)
-                # protoz = self.model
+                # zs1, zs2 = s_result1['z'], s_result2['z']
+                # zp1, zp2 = s_result2['proto_z'], s_result2['proto_z']
+                # # zs: (way*shot, emb)
+                # # zp: (way, emb)
+                #
+
                 print('loss:',total_loss)
                 loss_time = time.time()
                 self.lt.add(loss_time - forward_tm)
@@ -103,6 +109,7 @@ class MetaTrainer(Trainer):
 
     def evaluate(self, data_loader):
         args = self.args
+        print(args)
         self.model.eval()
         record = np.zeros((args.num_eval_episodes,))
         print('best epoch {}, best val acc={:.4f} + {:.4f}'.format(
@@ -111,7 +118,7 @@ class MetaTrainer(Trainer):
             self.trlog['max_acc_interval']
         ))
         with torch.no_grad():
-            labels = torch.cat([torch.tensor(i).float().repeat(args.eval_query) for i in range(args.eval_way)])
+            labels = torch.cat([torch.tensor(i).float().repeat(args.eval_query) for i in range(args.way)]).cuda()
             for i, batch in enumerate(data_loader):
                 s_img, s_img2, s_labels, q_img, q_img2, q_labels, lid_list = batch
                 if torch.cuda.is_available():
@@ -122,12 +129,12 @@ class MetaTrainer(Trainer):
                 q_res = self.model(q_img, get_feature=True, require_losses=False)
                 proto = s_res['proto'].unsqueeze(0)  # ->(1, n_way, embed)
                 qh = q_res['h'].unsqueeze(1)  # ->(n_way*n_query, 1, embed)
-                proto = proto.expand(args.eval_way*args.eval_query, *proto.shape[1:])  # ->(n_way*n_query, n_way, embed)
-                print('qh shape:', qh.shape)
+                proto = proto.expand(args.way*args.eval_query, *proto.shape[1:])  # ->(n_way*n_query, n_way, embed)
+                # print('qh shape:', qh.shape)
                 logits = -torch.sum((qh-proto)**2, dim=2)  # ->(n_way*n_query, n_way)
                 acc = count_acc(logits, labels)
                 record[i] = acc
-        va, vap = compute_confidence_interval(record[:, 1])
+        va, vap = compute_confidence_interval(record)
         self.model.train()
         return 0, va, vap
 

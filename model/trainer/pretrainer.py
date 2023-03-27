@@ -17,14 +17,6 @@ class PreTrainer(Trainer):
         self.model = prepare_model(args)
         self.optimizer, self.lr_scheduler = prepare_optimizer(self.model, args)
 
-    def prepare_label(self):
-        args = self.args
-        label = torch.arange(args.way, dtype=torch.int16).repeat(args.query)
-        label = label.type(torch.LongTensor)
-        if torch.cuda.is_available():
-            label = label.cuda()
-        return label
-
     def calc_map_map_sim(self, q, k, v):
         d = math.sqrt(k.shape[-1])
         # a: HW
@@ -48,7 +40,6 @@ class PreTrainer(Trainer):
 
 
     def train(self):
-        # TODO
         args = self.args
         eye = torch.eye(args.num_classes).cuda()
         for epoch in range(1, args.max_epoch + 1):
@@ -60,7 +51,7 @@ class PreTrainer(Trainer):
             start_tm = time.time()
             for batch in self.train_loader:
                 self.train_step += 1
-                # print(self.train_step)
+                print(self.train_step)
                 if torch.cuda.is_available():
                     data1, data2, gt_label = [_.cuda() for _ in batch]
                 else:
@@ -80,7 +71,7 @@ class PreTrainer(Trainer):
 
                 forward_tm = time.time()
                 self.ft.add(forward_tm - data_tm)
-                acc = count_acc(logits, gt_label)
+                # acc = count_acc(logits, gt_label)
 
                 z = F.normalize(z, p=2, dim=1)
                 z_ = F.normalize(z_, p=2, dim=1)
@@ -95,7 +86,6 @@ class PreTrainer(Trainer):
                 total_loss += args.alpha1 * loss_global_ss
                 g_loss_tm = time.time()
                 # print(f'loss_global_s_s time: {(g_loss_tm - forward_tm)*1000} ms')
-
                 bs, HW, DIM = q.shape
                 q = torch.cat((q, q_), dim=0)
                 k = torch.cat((k, k_), dim=0)
@@ -103,12 +93,11 @@ class PreTrainer(Trainer):
                 sim1 = self.calc_map_map_sim(q, k, v)
                 exp_sim1 = torch.exp(sim1/args.tau2)
                 num_list = exp_sim1[:bs, bs:].diag().repeat(2)
+                # 之所以这么做，是因为x与x+BS互成一对，取[i,i+N]，即矩阵右上分块的对角线，就能得到每个位置与其配对图片的相似度
                 den_list = torch.sum(exp_sim1, dim=1) - exp_sim1.diag()
-                loss_map_map_ss = - torch.sum(torch.log(num_list/den_list+1e-4))
-                # print('map_map_loss', loss_map_map_ss)
+                loss_map_map_ss = - torch.sum(torch.log(num_list/den_list + 1e-5))
                 total_loss += loss_map_map_ss * args.alpha2
                 mapmap_tm = time.time()
-                # print(f'map_map_loss time: {1000*(mapmap_tm - g_loss_tm) }ms')
                 u = F.normalize(u, p=2, dim=2)
                 u_ = F.normalize(u_, p=2, dim=2)
                 ulist = torch.cat((u, u_), dim=0)
@@ -117,9 +106,7 @@ class PreTrainer(Trainer):
                 num_list = exp_sim2[:bs, bs:].diag().repeat(2)
                 den_list = torch.sum(exp_sim2, dim=1) - exp_sim2.diag()
                 loss_vec_map_ss = -torch.sum(torch.log(num_list/den_list + 1e-4))
-                # print('vec_map_loss', loss_vec_map_ss)
                 vecmap_tm = time.time()
-                # print(f'vecmap loss time :{1000*(vecmap_tm-mapmap_tm)} ms')
                 total_loss += loss_vec_map_ss * args.alpha2
                 loss_global_s = 0
 
@@ -132,18 +119,15 @@ class PreTrainer(Trainer):
                     # print(zlist[idx])
                     den = torch.sum(torch.exp(torch.sum(zlist[i] * zlist / args.tau4, dim=1))) - \
                           torch.exp(zlist[i].dot(zlist[i]) / args.tau4)
-                    # print(idx)
-                    # print("num:", num)
-                    # print("den:", den)
-                    loss_global_s += -torch.log(num / den + 1e-4) / idx.shape[0]
+                    loss_global_s += -torch.log(num / den + 1e-5) / idx.shape[0]
 
-                # print('loss_global', loss_global_s)
+
                 g_loss_tm = time.time()
                 # print(f'global loss time : {(g_loss_tm - vecmap_tm)*1000} ms')
                 total_loss += loss_global_s * args.alpha3
-                # print('total_loss:', total_loss)
+                print('total_loss:', total_loss)
                 tl1.add(total_loss.item())
-                ta.add(acc)
+                # ta.add(acc)
 
                 self.optimizer.zero_grad()
                 total_loss.backward()
@@ -157,13 +141,15 @@ class PreTrainer(Trainer):
                 start_tm = time.time()
 
                 if self.train_step % args.episodes_per_epoch == 0:
+                    # 每过一段时间评估一下
                     print('total steps:', self.train_step)
                     vl, va, vap = self.evaluate(self.val_loader)
+                    print('eval acc: ', va)
                     if va >= self.trlog['max_acc']:
                         self.trlog['max_acc'] = va
                         self.trlog['max_acc_interval'] = vap
                         self.trlog['max_acc_epoch'] = self.train_epoch
-                        self.save_model('max_acc')
+                        self.save_model('max_acc', str(va))
 
             # self.lr_scheduler.step()
             self.try_evaluate(epoch)
@@ -217,10 +203,8 @@ class PreTrainer(Trainer):
         self.model.load_state_dict(torch.load(osp.join(self.args.save_path, 'max_acc.pth'))['params'])
         self.model.eval()
         record = np.zeros((10000, 2))
-        # label = torch.arange(args.eval_way, dtype=torch.int16).repeat(args.eval_query)
-        # label = label.type(torch.LongTensor)
-        # if torch.cuda.is_available():
-        #     label = label.cuda()
+        # 这里就不算loss了
+
         print('best epoch {}, best val acc={:.4f} + {:.4f}'.format(
             self.trlog['max_acc_epoch'],
             self.trlog['max_acc'],

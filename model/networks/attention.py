@@ -47,8 +47,8 @@ class Attention(nn.Module):
         sz_b, len_v, _ = v.size()
 
         q = self.w_qs(q).view(sz_b, len_q, d_k)
-        k = self.w_ks(k).view(sz_b, len_q, d_k)
-        v = self.w_vs(v).view(sz_b, len_q, d_v)
+        k = self.w_ks(k).view(sz_b, len_k, d_k)
+        v = self.w_vs(v).view(sz_b, len_v, d_v)
         return q, k, v
 
     def forward(self, q, k, v, residual):
